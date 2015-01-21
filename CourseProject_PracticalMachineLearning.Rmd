@@ -1,0 +1,112 @@
+---
+title: "Coursera Practical Machine Learning Course Project"
+author: "DP"
+date: "Wednesday, January 21, 2015"
+output: html_document
+---
+
+###Overview
+
+This R markdown file has been prepared to satisfy the requirements for the Coursera Practical Machine Learning course. 
+
+The objective of this assignment is to take data collected from "fitbit" type devices, and use it to predict the manner in which the exercise was performed. 
+
+This report will outline 1) the steps taken in constructin the model, including data cleansing, exploration, and model selection; 2) use of cross validation, and 3) estimates of in sample/out of sample error. 
+
+Overall, the approach taken was to construct a randomForest Model on the non-summary variables, which overall correctly classified the 20 variables in the testing set. 
+
+Data was kindly provided by the group at this source: : http://groupware.les.inf.puc-rio.br/har . source: Ugulino, W.; Cardador, D.; Vega, K.; Velloso, E.; Milidiu, R.; Fuks, H. Wearable Computing: Accelerometers' Data Classification of Body Postures and Movements . 
+
+
+## Data Preparation and Cleansing
+
+1st step is to load in the appropriate packages, as well as the source data.
+
+```{r}
+##load in packages
+suppressWarnings(library("caret"))
+suppressWarnings(library("corrplot"))
+suppressWarnings(library("ggplot2"))
+
+##set wd
+setwd("C:/Users/dp/Documents/coursera/MachineLearning/courseproject/github project")
+
+## read in data
+pmlData <- read.csv("pml-training.csv", na.strings=c("#DIV/0!"))
+pmlTestingData <- read.csv("pml-testing.csv", na.strings=c("#DIV/0!"))
+
+```
+
+## data cleansing 
+The steps taken to clean up the data include:
+1. perform str of the data to understand type
+2. removing columns 1-7, which are not predictors
+3. removing columns with many NAs (these are summary variable columns)
+4. understand the mix between the classe variable
+
+
+```{r, echo=T}
+str(pmlData)
+pmlData <- pmlData[,-c(1:7)]
+pmlData <- pmlData[,-grep("var_|kurtosis_|max_|min_|avg_|stddev_|amplitude_|total_|skewness_", names(pmlData))]
+prop.table(table(pmlData$classe))
+```
+
+## Creating Training and Cross Validation Sets
+Here I split the overall dataset into a training set and a cross validation set, using a 80/20 proportion.
+
+``` {r}
+inTrain <- createDataPartition(y=pmlData$classe, p=.8, list=F)
+training <- pmlData[inTrain,]
+cvalidation <- pmlData[-inTrain,]
+
+## compare the proportion of observations within each class for both sets
+rbind(prop.table(table(training$classe)),prop.table(table(cvalidation$classe)))
+
+```
+
+## Tidying Data Set
+The next step was to look for zero/near-zero variance variables, however, none were found.
+
+The following step was to look for highly correlated variables:
+
+``` {r}
+## look for zero variance, or near zero variance
+nsv <- nearZeroVar(training, saveMetrics=T)
+nsv$zeroVar
+nsv$nzv
+
+## looking for highly correlated features
+corrCheck <- cor(subset(training, select=-classe))
+highCorr <- findCorrelation(corrCheck, cutoff=.95)
+names(training[,highCorr])
+
+corrplot(corrCheck, tl.cex=.55)
+
+```
+
+## model Creation
+Using the caret package, I selected to use a randomforest model. Due to processing constraints, I only used 2 bootstraps.
+
+```{r, echo=T}
+modFit <- train(classe ~., data=training, method="rf", trControl=trainControl(number=2,classProbs=T))
+
+modFit
+
+```
+
+Based on the high accuracy, I decided to stick with this model and run a prediction with both the training set and the validation data sets.
+
+``` {r}
+##training set
+pred <- predict(modFit, training)
+confusionMatrix(pred, training$classe)
+
+##validation set
+pred2 <- predict(modFit, newdata=cvalidation)
+confusionMatrix(pred2, cvalidation$classe)
+```
+
+
+As seen in the confusionMatrix above, the accuracy of the model is quite good, which suggestions out of sample accuracy of about 99%. 
+
